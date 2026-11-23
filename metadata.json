@@ -1,0 +1,8 @@
+{
+  "name": "iHeartGains.com - Elite Athletic Performance Consulting",
+  "description": "High-performance fitness and athletic personal training consulting for athletes. Book biomechanical assessments, strength periodization, and competition prep consultations with Google Calendar integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
