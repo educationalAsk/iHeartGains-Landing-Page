@@ -1,3 +1,10 @@
+import firebaseConfig from '../../firebase-applet-config.json';
+
+export interface BusyInterval {
+  startMs: number;
+  endMs: number;
+}
+
 export interface ConsultationBooking {
   athleteName: string;
   athleteEmail: string;
@@ -131,6 +138,97 @@ export async function fetchUpcomingEvents(
 
   const data = await response.json();
   return (data.items || []).filter((item: any) => item.status !== 'cancelled');
+}
+
+function parseCalendarEventInterval(item: any): BusyInterval | null {
+  if (!item || item.status === 'cancelled' || item.transparency === 'transparent') {
+    return null;
+  }
+
+  if (item.start?.dateTime && item.end?.dateTime) {
+    const startMs = new Date(item.start.dateTime).getTime();
+    const endMs = new Date(item.end.dateTime).getTime();
+    if (!Number.isNaN(startMs) && !Number.isNaN(endMs) && endMs > startMs) {
+      return { startMs, endMs };
+    }
+    return null;
+  }
+
+  if (item.start?.date && item.end?.date) {
+    const [sy, sm, sd] = item.start.date.split('-').map(Number);
+    const [ey, em, ed] = item.end.date.split('-').map(Number);
+    const startMs = new Date(sy, sm - 1, sd, 0, 0, 0, 0).getTime();
+    const endMs = new Date(ey, em - 1, ed, 0, 0, 0, 0).getTime();
+    if (!Number.isNaN(startMs) && !Number.isNaN(endMs) && endMs > startMs) {
+      return { startMs, endMs };
+    }
+  }
+
+  return null;
+}
+
+export async function fetchBusyIntervals(
+  accessToken: string | null,
+  timeMinISO: string,
+  timeMaxISO: string
+): Promise<BusyInterval[]> {
+  const intervals: BusyInterval[] = [];
+  const baseParams = `timeMin=${encodeURIComponent(timeMinISO)}&timeMax=${encodeURIComponent(
+    timeMaxISO
+  )}&singleEvents=true&orderBy=startTime&maxResults=250`;
+
+  if (accessToken) {
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${baseParams}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData?.error?.message || 'Failed to check Google Calendar availability'
+      );
+    }
+
+    const data = await response.json();
+    for (const item of data.items || []) {
+      const parsed = parseCalendarEventInterval(item);
+      if (parsed) intervals.push(parsed);
+    }
+  }
+
+  const coachCalendarId = (import.meta as any).env?.VITE_COACH_CALENDAR_ID?.trim();
+  if (coachCalendarId && coachCalendarId !== 'primary') {
+    try {
+      const url = accessToken
+        ? `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+            coachCalendarId
+          )}/events?${baseParams}`
+        : `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+            coachCalendarId
+          )}/events?${baseParams}&key=${encodeURIComponent(firebaseConfig.apiKey)}`;
+
+      const res = await fetch(
+        url,
+        accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : undefined
+      );
+      if (res.ok) {
+        const coachData = await res.json();
+        for (const item of coachData.items || []) {
+          const parsed = parseCalendarEventInterval(item);
+          if (parsed) intervals.push(parsed);
+        }
+      }
+    } catch {
+      // Ignore optional public coach calendar errors so primary check still succeeds
+    }
+  }
+
+  return intervals;
 }
 
 /**

@@ -5,9 +5,9 @@ import {
   Calendar as CalendarIcon,
   Check,
   CheckCircle2,
-  Clock,
   Download,
   ExternalLink,
+  RefreshCw,
   ShieldCheck,
   X,
 } from 'lucide-react';
@@ -15,9 +15,11 @@ import { CONSULTATION_TYPES } from '../data/consultationData';
 import { ALA_CARTE_COMPONENTS } from '../data/alaCarteMenu';
 import { AthleteIntake, ConsultationType } from '../types';
 import {
+  BusyInterval,
   ConsultationBooking,
   createGoogleCalendarEvent,
   downloadICS,
+  fetchBusyIntervals,
   GoogleCalendarEventResponse,
 } from '../services/calendarService';
 import { googleSignIn } from '../services/firebaseAuth';
@@ -66,29 +68,178 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
     }
   }, [selectedPillarId, selectionTrigger]);
 
-  const availableDates = React.useMemo(() => {
-    const dates = [];
-    const today = new Date();
-    for (let i = 1; i <= 7; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() + i);
-      dates.push(d);
+  // Candidate 30-minute start times from 09:00 AM to 05:30 PM
+  const CANDIDATE_SLOT_MINUTES = React.useMemo(() => {
+    const mins: number[] = [];
+    for (let m = 9 * 60; m <= 17 * 60 + 30; m += 30) {
+      mins.push(m);
     }
-    return dates;
+    return mins;
   }, []);
 
-  const [selectedDateIndex, setSelectedDateIndex] = useState<number>(0);
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('09:30 AM');
+  const FIFTY_TWO_HOURS_MS = 52 * 60 * 60 * 1000;
+  const EARLIEST_START_MINUTES = 9 * 60; // 9:00 AM
+  const LATEST_END_MINUTES = 18 * 60 + 15; // 6:15 PM
+  const MAX_SLOTS_PER_DAY = 8;
 
-  const timeSlots = [
-    '08:00 AM',
-    '09:30 AM',
-    '11:00 AM',
-    '01:30 PM',
-    '03:00 PM',
-    '04:30 PM',
-    '06:00 PM',
-  ];
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [busyIntervals, setBusyIntervals] = useState<BusyInterval[]>([]);
+  const [isCheckingCalendar, setIsCheckingCalendar] = useState(false);
+  const [calendarCheckError, setCalendarCheckError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const refreshCalendarAvailability = React.useCallback(async () => {
+    const currentMs = Date.now();
+    setNowMs(currentMs);
+    const hasCoachCal = Boolean((import.meta as any).env?.VITE_COACH_CALENDAR_ID?.trim());
+
+    if (!accessToken && !hasCoachCal) {
+      setBusyIntervals([]);
+      setCalendarCheckError(null);
+      return;
+    }
+
+    setIsCheckingCalendar(true);
+    setCalendarCheckError(null);
+    try {
+      const timeMin = new Date(currentMs).toISOString();
+      const timeMax = new Date(currentMs + FIFTY_TWO_HOURS_MS).toISOString();
+      const intervals = await fetchBusyIntervals(accessToken, timeMin, timeMax);
+      setBusyIntervals(intervals);
+    } catch (err: any) {
+      console.error('Calendar conflict check failed:', err);
+      setCalendarCheckError(
+        err?.message || 'Unable to verify calendar conflicts. Please reconnect Google.'
+      );
+    } finally {
+      setIsCheckingCalendar(false);
+    }
+  }, [accessToken]);
+
+  React.useEffect(() => {
+    refreshCalendarAvailability();
+  }, [refreshCalendarAvailability]);
+
+  const formatSlotLabel = (totalMinutes: number): string => {
+    const h24 = Math.floor(totalMinutes / 60);
+    const mins = totalMinutes % 60;
+    const period = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${String(h12).padStart(2, '0')}:${String(mins).padStart(2, '0')} ${period}`;
+  };
+
+  const availableDaySlots = React.useMemo(() => {
+    const nowDate = new Date(nowMs);
+    const windowEndMs = nowMs + FIFTY_TWO_HOURS_MS;
+    const durationMs = selectedType.durationMinutes * 60_000;
+    const groups: {
+      dateKey: string;
+      date: Date;
+      slots: { label: string; startDate: Date; endDate: Date }[];
+    }[] = [];
+
+    for (let dayOffset = 0; dayOffset <= 3; dayOffset++) {
+      const baseDate = new Date(
+        nowDate.getFullYear(),
+        nowDate.getMonth(),
+        nowDate.getDate() + dayOffset
+      );
+      const validSlots: { label: string; startDate: Date; endDate: Date }[] = [];
+
+      for (const startMinute of CANDIDATE_SLOT_MINUTES) {
+        const endMinute = startMinute + selectedType.durationMinutes;
+        if (startMinute < EARLIEST_START_MINUTES || endMinute > LATEST_END_MINUTES) {
+          continue;
+        }
+
+        const hours = Math.floor(startMinute / 60);
+        const minutes = startMinute % 60;
+        const startDate = new Date(
+          baseDate.getFullYear(),
+          baseDate.getMonth(),
+          baseDate.getDate(),
+          hours,
+          minutes,
+          0,
+          0
+        );
+        const startMs = startDate.getTime();
+        const endMs = startMs + durationMs;
+
+        if (startMs <= nowMs || startMs > windowEndMs) {
+          continue;
+        }
+
+        const hasConflict = busyIntervals.some(
+          (busy) => busy.startMs < endMs && busy.endMs > startMs
+        );
+        if (hasConflict) {
+          continue;
+        }
+
+        validSlots.push({
+          label: formatSlotLabel(startMinute),
+          startDate,
+          endDate: new Date(endMs),
+        });
+      }
+
+      if (validSlots.length > 0) {
+        const cappedSlots =
+          validSlots.length <= MAX_SLOTS_PER_DAY
+            ? validSlots
+            : Array.from({ length: MAX_SLOTS_PER_DAY }, (_, idx) => {
+                const sampleIdx = Math.round(
+                  (idx * (validSlots.length - 1)) / (MAX_SLOTS_PER_DAY - 1)
+                );
+                return validSlots[sampleIdx];
+              });
+
+        const dateKey = `${baseDate.getFullYear()}-${String(baseDate.getMonth() + 1).padStart(
+          2,
+          '0'
+        )}-${String(baseDate.getDate()).padStart(2, '0')}`;
+        groups.push({
+          dateKey,
+          date: baseDate,
+          slots: cappedSlots,
+        });
+      }
+    }
+
+    return groups;
+  }, [nowMs, selectedType.durationMinutes, busyIntervals, CANDIDATE_SLOT_MINUTES]);
+
+  const [selectedDateKey, setSelectedDateKey] = useState<string>('');
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
+
+  const activeDayGroup = React.useMemo(() => {
+    return (
+      availableDaySlots.find((g) => g.dateKey === selectedDateKey) || availableDaySlots[0]
+    );
+  }, [availableDaySlots, selectedDateKey]);
+
+  const activeSlot = React.useMemo(() => {
+    if (!activeDayGroup) return null;
+    return (
+      activeDayGroup.slots.find((s) => s.label === selectedTimeSlot) || activeDayGroup.slots[0]
+    );
+  }, [activeDayGroup, selectedTimeSlot]);
+
+  React.useEffect(() => {
+    if (activeDayGroup && activeDayGroup.dateKey !== selectedDateKey) {
+      setSelectedDateKey(activeDayGroup.dateKey);
+    }
+    if (activeSlot && activeSlot.label !== selectedTimeSlot) {
+      setSelectedTimeSlot(activeSlot.label);
+    }
+  }, [activeDayGroup, activeSlot, selectedDateKey, selectedTimeSlot]);
 
   const [intake, setIntake] = useState<AthleteIntake>({
     fullName: currentUser?.displayName || '',
@@ -118,16 +269,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
   } | null>(null);
 
   const calculateBookingTimes = (): { startISO: string; endISO: string } => {
-    const targetDate = availableDates[selectedDateIndex];
-    const [timeStr, modifier] = selectedTimeSlot.split(' ');
-    let [hours, minutes] = timeStr.split(':').map(Number);
-
-    if (modifier === 'PM' && hours < 12) hours += 12;
-    if (modifier === 'AM' && hours === 12) hours = 0;
-
-    const startDate = new Date(targetDate);
-    startDate.setHours(hours, minutes, 0, 0);
-
+    const startDate = activeSlot ? new Date(activeSlot.startDate) : new Date(Date.now() + 3600_000);
     const endDate = new Date(startDate.getTime() + selectedType.durationMinutes * 60000);
 
     return {
@@ -172,6 +314,33 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
     }
     if (selectedType.id === 'alacarte-three-subject' && selectedAlaCarteItems.length !== 3) {
       setErrorMessage('Please choose 3 strategy subjects from the À La Carte Menu above.');
+      return;
+    }
+    const currentMs = Date.now();
+    if (!activeSlot) {
+      setErrorMessage('No conflict-free time slots are available within the next 52 hours.');
+      return;
+    }
+
+    const slotStartMs = activeSlot.startDate.getTime();
+    const slotEndMs = activeSlot.endDate.getTime();
+    const startMins = activeSlot.startDate.getHours() * 60 + activeSlot.startDate.getMinutes();
+    const endMins = activeSlot.endDate.getHours() * 60 + activeSlot.endDate.getMinutes();
+    const hasConflict = busyIntervals.some(
+      (busy) => busy.startMs < slotEndMs && busy.endMs > slotStartMs
+    );
+
+    if (
+      slotStartMs <= currentMs ||
+      slotStartMs > currentMs + FIFTY_TWO_HOURS_MS ||
+      startMins < EARLIEST_START_MINUTES ||
+      endMins > LATEST_END_MINUTES ||
+      hasConflict
+    ) {
+      setNowMs(currentMs);
+      setErrorMessage(
+        'Please pick a conflict-free time slot between 9:00 AM and 6:15 PM within the next 52 hours.'
+      );
       return;
     }
     if (!accessToken) {
@@ -228,6 +397,7 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
         booking: bookingPayload,
       });
       setIsConfirmModalOpen(false);
+      refreshCalendarAvailability();
     } catch (err: any) {
       console.error('Failed to create calendar event:', err);
       setErrorMessage(
@@ -395,57 +565,137 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
 
               {/* Date & Time Selector */}
               <div className="p-6 rounded-2xl bg-[#050505] border border-[#333333] space-y-5">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-bold text-[#FFFFFF] font-['Space_Grotesk']">
-                    2. Date &amp; Time
-                  </h3>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-[#FFFFFF] font-['Space_Grotesk']">
+                      2. Date &amp; Time <span className="text-[#00FFFF] text-xs font-mono">(Next 52 Hours)</span>
+                    </h3>
+                    <p className="text-[11px] text-[#CCCCCC] mt-0.5">
+                      Sessions start at or after 9:00 AM, end by 6:15 PM, and exclude calendar conflicts.
+                    </p>
+                  </div>
                   <span className="text-[11px] font-mono text-[#00FFFF]">
                     {Intl.DateTimeFormat().resolvedOptions().timeZone}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-                  {availableDates.map((date, idx) => {
-                    const isSelected = selectedDateIndex === idx;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setSelectedDateIndex(idx)}
-                        className={`p-2.5 rounded-xl border flex flex-col items-center transition-colors cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#FF0619] text-[#FFFFFF] border-[#FF0619] font-bold'
-                            : 'bg-[#000000] border-[#333333] text-[#CCCCCC] hover:border-[#00FFFF]'
+                {/* Live Calendar Conflict Status */}
+                <div className="p-3 rounded-xl bg-[#000000] border border-[#333333] flex flex-wrap items-center justify-between gap-2 text-xs">
+                  {accessToken ? (
+                    <>
+                      <span
+                        className={`font-medium flex items-center gap-1.5 ${
+                          calendarCheckError ? 'text-[#FF0619]' : 'text-[#A0FF00]'
                         }`}
                       >
-                        <span className="text-[10px] uppercase">
-                          {date.toLocaleDateString('en-US', { weekday: 'short' })}
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                          {isCheckingCalendar
+                            ? 'Checking your Google Calendar for conflicts...'
+                            : calendarCheckError
+                            ? calendarCheckError
+                            : 'Calendar synced — conflicting times hidden'}
                         </span>
-                        <span className="text-base font-black">{date.getDate()}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={refreshCalendarAvailability}
+                        disabled={isCheckingCalendar}
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#00FFFF] hover:text-[#FFFFFF] cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw
+                          className={`w-3 h-3 ${isCheckingCalendar ? 'animate-spin' : ''}`}
+                        />
+                        <span>Refresh</span>
                       </button>
-                    );
-                  })}
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[#CCCCCC]">
+                        Sign in with Google to automatically hide times that conflict with your calendar.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleSignInGoogle}
+                        disabled={isAuthenticating}
+                        className="text-[11px] font-bold text-[#00FFFF] hover:text-[#A0FF00] cursor-pointer disabled:opacity-50"
+                      >
+                        {isAuthenticating ? 'Connecting...' : 'Connect Calendar →'}
+                      </button>
+                    </>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                  {timeSlots.map((slot) => {
-                    const isSelected = selectedTimeSlot === slot;
-                    return (
-                      <button
-                        key={slot}
-                        type="button"
-                        onClick={() => setSelectedTimeSlot(slot)}
-                        className={`py-2.5 px-3 rounded-xl border text-xs font-mono font-bold transition-colors cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#000000] border-[#00FFFF] text-[#00FFFF]'
-                            : 'bg-[#000000] border-[#333333] text-[#CCCCCC] hover:border-[#CCCCCC]'
-                        }`}
-                      >
-                        {slot}
-                      </button>
-                    );
-                  })}
-                </div>
+                {availableDaySlots.length === 0 ? (
+                  <div className="p-5 rounded-xl bg-[#000000] border border-[#333333] text-center space-y-2">
+                    <p className="text-xs font-semibold text-[#FFFFFF]">
+                      No conflict-free {selectedType.durationMinutes}-minute openings between 9:00 AM and 6:15 PM in the next 52 hours.
+                    </p>
+                    <p className="text-[11px] text-[#CCCCCC]">
+                      Try selecting a shorter session duration above or refresh your calendar availability.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      {availableDaySlots.map((group) => {
+                        const isSelected = activeDayGroup?.dateKey === group.dateKey;
+                        return (
+                          <button
+                            key={group.dateKey}
+                            type="button"
+                            onClick={() => {
+                              setSelectedDateKey(group.dateKey);
+                              if (!group.slots.some((s) => s.label === selectedTimeSlot)) {
+                                setSelectedTimeSlot(group.slots[0].label);
+                              }
+                            }}
+                            className={`p-3 rounded-xl border flex flex-col items-center transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#FF0619] text-[#FFFFFF] border-[#FF0619] font-bold'
+                                : 'bg-[#000000] border-[#333333] text-[#CCCCCC] hover:border-[#00FFFF]'
+                            }`}
+                          >
+                            <span className="text-[10px] uppercase tracking-wider">
+                              {group.date.toLocaleDateString('en-US', {
+                                weekday: 'short',
+                                month: 'short',
+                              })}
+                            </span>
+                            <span className="text-lg font-black">{group.date.getDate()}</span>
+                            <span
+                              className={`text-[10px] font-mono mt-0.5 ${
+                                isSelected ? 'text-[#FFFFFF]/90' : 'text-[#A0FF00]'
+                              }`}
+                            >
+                              {group.slots.length} {group.slots.length === 1 ? 'slot' : 'slots'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {(activeDayGroup?.slots || []).map((slot) => {
+                        const isSelected = activeSlot?.label === slot.label;
+                        return (
+                          <button
+                            key={slot.label}
+                            type="button"
+                            onClick={() => setSelectedTimeSlot(slot.label)}
+                            className={`py-2.5 px-3 rounded-xl border text-xs font-mono font-bold transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#000000] border-[#00FFFF] text-[#00FFFF]'
+                                : 'bg-[#000000] border-[#333333] text-[#CCCCCC] hover:border-[#CCCCCC]'
+                            }`}
+                          >
+                            {slot.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -466,14 +716,16 @@ export const BookingSection: React.FC<BookingSectionProps> = ({
                 </div>
                 <div className="flex justify-between text-[#CCCCCC]">
                   <span>
-                    {availableDates[selectedDateIndex].toLocaleDateString('en-US', {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                    })}
+                    {activeDayGroup
+                      ? activeDayGroup.date.toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })
+                      : ''}
                   </span>
                   <span className="text-[#A0FF00] font-mono">
-                    {selectedTimeSlot} ({selectedType.durationMinutes} min)
+                    {activeSlot?.label || ''} ({selectedType.durationMinutes} min)
                   </span>
                 </div>
               </div>
