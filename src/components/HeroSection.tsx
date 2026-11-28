@@ -64,9 +64,9 @@ export const HeroSection: React.FC = () => {
                 <div className="absolute inset-0 bg-gradient-to-t from-[#000000]/80 via-transparent to-transparent" />
                 <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-xs">
                   <span className="font-semibold text-[#FFFFFF]">
-                    1-on-1 Strategy Consulting &amp; Calendar Sync
+                    1-on-1 Strategy Consulting
                   </span>
-                  <span className="font-mono text-[#A0FF00]">Google Meet Ready</span>
+                  <span className="font-mono text-[#A0FF00]">Direct Google Meet Booking</span>
                 </div>
               </div>
             </div>

@@ -56,14 +56,14 @@ export const Footer: React.FC = () => {
             </ul>
           </div>
 
-          {/* Google Calendar Privacy */}
+          {/* Scheduling & Privacy */}
           <div className="md:col-span-4 space-y-2.5">
             <h4 className="text-xs font-bold uppercase tracking-wider text-[#FFFFFF] flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-[#00FFFF]" />
-              Google Calendar Privacy
+              Workspace Scheduling &amp; Privacy
             </h4>
             <p className="text-xs text-[#CCCCCC] leading-relaxed">
-              iHeartGains connects with the official Google Calendar API strictly to create and view your scheduled consultation sessions. Your data is never stored externally or shared.
+              Sessions are scheduled directly through the iHeartGains Google Workspace Appointment Schedule. No third-party app login or external calendar permissions are required.
             </p>
           </div>
         </div>

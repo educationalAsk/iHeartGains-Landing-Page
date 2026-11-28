@@ -1,19 +1,7 @@
 import React from 'react';
-import { User } from 'firebase/auth';
-import { Calendar, Heart, LogOut } from 'lucide-react';
-import { logoutGoogle } from '../services/firebaseAuth';
+import { Heart } from 'lucide-react';
 
-interface NavbarProps {
-  currentUser: User | null;
-  onOpenUpcoming: () => void;
-  onSignInClick: () => void;
-}
-
-export const Navbar: React.FC<NavbarProps> = ({
-  currentUser,
-  onOpenUpcoming,
-  onSignInClick,
-}) => {
+export const Navbar: React.FC = () => {
   const scrollTo = (id: string) => {
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -70,46 +58,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </nav>
 
-        {/* Actions */}
-        <div className="flex items-center gap-3">
-          {currentUser ? (
-            <div className="flex items-center gap-2 bg-[#050505] border border-[#333333] rounded-lg py-1.5 px-2.5">
-              <span className="hidden sm:inline text-xs font-medium text-[#FFFFFF] max-w-[110px] truncate">
-                {currentUser.displayName || currentUser.email}
-              </span>
-              <button
-                onClick={onOpenUpcoming}
-                className="flex items-center gap-1 text-xs font-semibold text-[#00FFFF] hover:text-[#A0FF00] cursor-pointer"
-                title="View synced Google Calendar sessions"
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                <span className="hidden lg:inline">Sessions</span>
-              </button>
-              <button
-                onClick={() => logoutGoogle()}
-                className="text-[#CCCCCC] hover:text-[#FF0619] p-0.5 transition-colors cursor-pointer"
-                title="Sign out"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={onSignInClick}
-              className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-[#CCCCCC] hover:text-[#FFFFFF] bg-[#050505] border border-[#333333] hover:border-[#00FFFF] rounded-lg px-3 py-2 transition-colors cursor-pointer"
-            >
-              <Calendar className="w-3.5 h-3.5 text-[#00FFFF]" />
-              <span>Sync Google Calendar</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => scrollTo('schedule')}
-            className="text-xs sm:text-sm font-bold bg-[#FF0619] hover:bg-[#e00516] text-[#FFFFFF] px-4 py-2 rounded-lg transition-colors cursor-pointer"
-          >
-            Book Session
-          </button>
-        </div>
+        {/* CTA */}
+        <button
+          onClick={() => scrollTo('schedule')}
+          className="text-xs sm:text-sm font-bold bg-[#FF0619] hover:bg-[#e00516] text-[#FFFFFF] px-4 py-2 rounded-lg transition-colors cursor-pointer"
+        >
+          Book Session
+        </button>
       </div>
     </header>
   );

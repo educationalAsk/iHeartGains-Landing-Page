@@ -20,7 +20,7 @@ export const FAQSection: React.FC = () => {
             Frequently Asked Questions
           </h2>
           <p className="mt-3 text-sm sm:text-base text-[#CCCCCC]">
-            How goal-driven strategy consulting works, what to bring, and how Google Calendar sync works.
+            How goal-driven strategy consulting works, what to bring, and how online scheduling works.
           </p>
         </div>
 

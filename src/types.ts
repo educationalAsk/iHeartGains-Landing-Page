@@ -22,20 +22,3 @@ export interface AlaCarteComponent {
   description: string;
   deliverable: string;
 }
-
-export interface AthleteIntake {
-  fullName: string;
-  email: string;
-  sport: string;
-  experienceLevel: 'collegiate' | 'pro' | 'hybrid-athlete' | 'competitive';
-  goalsAndLimiters: string;
-}
-
-export interface ScheduledEventInfo {
-  id: string;
-  summary: string;
-  htmlLink: string;
-  hangoutLink?: string;
-  start: string;
-  end: string;
-}

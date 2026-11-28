@@ -14,7 +14,7 @@ export const CONSULTATION_TYPES: ConsultationType[] = [
       '60-Minute 1-on-1 Custom 3-Subject Session',
       'Focused strategy across your 3 chosen components',
       'Practical adjustments matched to your schedule',
-      'Google Calendar sync with all 3 subjects listed',
+      'Instant booking via Google Calendar Appointment Schedule',
     ],
   },
   {
@@ -30,7 +30,7 @@ export const CONSULTATION_TYPES: ConsultationType[] = [
       '60-Minute 1-on-1 Lab & Strategy Consultation',
       'Movement asymmetry & performance limiter breakdown',
       'Custom goal strategy adapted to your weekly calendar',
-      'Google Calendar sync with reminder intervals',
+      'Direct Google Meet link upon appointment booking',
     ],
   },
   {
@@ -78,7 +78,7 @@ export const CONSULTATION_TYPES: ConsultationType[] = [
       '30-Minute High-Impact Strategy Session',
       'Immediate, tailored training & pacing adjustments',
       'Clear action summary built around your schedule',
-      'Google Calendar appointment confirmation',
+      'Direct Google Calendar Appointment Schedule booking',
     ],
   },
   {
@@ -94,7 +94,7 @@ export const CONSULTATION_TYPES: ConsultationType[] = [
       '60-Minute 1-on-1 Nutrition & Metabolic Strategy Session',
       'Food matrix & gut health audit (resistant starch, fiber & phytonutrients)',
       'Glycogen timing, metabolic sink & hormonal signaling strategy',
-      'Direct Google Calendar appointment sync with prep checklist',
+      'Direct appointment booking with Google Meet invite',
     ],
   },
 ];
@@ -106,9 +106,9 @@ export const CONSULTATION_FAQS = [
       'Generic training plans assume every athlete has the same injury history, recovery capacity, stress load, and limiter. I develop individualized strategies around your exact goals—diagnosing what actually holds you back and adjusting your pacing, strength, and nutrition so you can execute consistently in the real world.',
   },
   {
-    question: 'How does Google Calendar synchronization work?',
+    question: 'How does scheduling via Google Calendar Appointment Schedule work?',
     answer:
-      'When you book a strategy session with iHeartGains.com, you can authenticate securely with your Google account. With your permission, our system creates the session directly on your primary Google Calendar, including Google Meet video access, agenda details, and prep reminders.',
+      'Pick your strategy session (or build a 3-subject consult from the À La Carte menu), copy your brief if desired, and choose an open time directly in the embedded iHeartGains Google Workspace booking calendar. You do not need to grant any Google account permissions—Google automatically checks real-time availability and emails your Google Meet invite.',
   },
   {
     question: 'What do I need to prepare before our session?',
